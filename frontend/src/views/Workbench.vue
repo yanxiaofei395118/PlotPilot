@@ -145,6 +145,8 @@ function startDragLeft(e: MouseEvent) {
   dragging = 'left'
   dragStartX = e.clientX
   dragStartWidth = leftWidth.value
+  // 拖拽时禁止文本选中
+  document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', stopDrag)
 }
@@ -153,11 +155,15 @@ function startDragRight(e: MouseEvent) {
   dragging = 'right'
   dragStartX = e.clientX
   dragStartWidth = rightWidth.value
+  // 拖拽时禁止文本选中
+  document.body.style.userSelect = 'none'
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', stopDrag)
 }
 
 function onDrag(e: MouseEvent) {
+  // 防止拖拽时选中文本
+  e.preventDefault()
   if (dragging === 'left') {
     const delta = e.clientX - dragStartX
     const next = Math.min(LEFT_MAX, Math.max(LEFT_MIN, dragStartWidth + delta))
@@ -173,6 +179,8 @@ function onDrag(e: MouseEvent) {
 
 function stopDrag() {
   dragging = null
+  // 恢复文本选中
+  document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
 }
@@ -327,6 +335,9 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
+  /* 拖拽时防止选中文本 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .divider::after {
