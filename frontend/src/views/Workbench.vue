@@ -147,6 +147,8 @@ function startDragLeft(e: MouseEvent) {
   dragStartWidth = leftWidth.value
   // 拖拽时禁止文本选中
   document.body.style.userSelect = 'none'
+  // 添加拖拽类禁用过渡动画
+  document.querySelector('.left-pane')?.classList.add('dragging')
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', stopDrag)
 }
@@ -157,8 +159,29 @@ function startDragRight(e: MouseEvent) {
   dragStartWidth = rightWidth.value
   // 拖拽时禁止文本选中
   document.body.style.userSelect = 'none'
+  // 添加拖拽类禁用过渡动画
+  document.querySelector('.right-pane')?.classList.add('dragging')
   document.addEventListener('mousemove', onDrag)
   document.addEventListener('mouseup', stopDrag)
+}
+
+// 使用 requestAnimationFrame 节流拖拽更新
+let rafId: number | null = null
+let pendingWidth: number | null = null
+let pendingSide: 'left' | 'right' | null = null
+
+function updateWidth() {
+  if (pendingWidth === null || pendingSide === null) return
+  if (pendingSide === 'left') {
+    leftWidth.value = pendingWidth
+    if (leftCollapsed.value) leftCollapsed.value = false
+  } else {
+    rightWidth.value = pendingWidth
+    if (rightCollapsed.value) rightCollapsed.value = false
+  }
+  pendingWidth = null
+  pendingSide = null
+  rafId = null
 }
 
 function onDrag(e: MouseEvent) {
@@ -166,19 +189,32 @@ function onDrag(e: MouseEvent) {
   e.preventDefault()
   if (dragging === 'left') {
     const delta = e.clientX - dragStartX
-    const next = Math.min(LEFT_MAX, Math.max(LEFT_MIN, dragStartWidth + delta))
-    leftWidth.value = next
-    if (leftCollapsed.value) leftCollapsed.value = false
+    pendingWidth = Math.min(LEFT_MAX, Math.max(LEFT_MIN, dragStartWidth + delta))
+    pendingSide = 'left'
   } else if (dragging === 'right') {
     const delta = dragStartX - e.clientX   // 右侧：向左拖变大
-    const next = Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, dragStartWidth + delta))
-    rightWidth.value = next
-    if (rightCollapsed.value) rightCollapsed.value = false
+    pendingWidth = Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, dragStartWidth + delta))
+    pendingSide = 'right'
+  }
+  if (rafId === null) {
+    rafId = requestAnimationFrame(updateWidth)
   }
 }
 
 function stopDrag() {
   dragging = null
+  // 取消未执行的动画帧
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+    // 应用最后待处理的宽度
+    if (pendingWidth !== null && pendingSide !== null) {
+      updateWidth()
+    }
+  }
+  // 移除拖拽类恢复过渡动画
+  document.querySelector('.left-pane')?.classList.remove('dragging')
+  document.querySelector('.right-pane')?.classList.remove('dragging')
   // 恢复文本选中
   document.body.style.userSelect = ''
   document.removeEventListener('mousemove', onDrag)
@@ -308,6 +344,13 @@ watch(
   overflow: hidden;
   transition: width 0.2s ease;
   min-width: 0;
+  /* 拖拽时优化渲染性能 */
+  will-change: width;
+}
+
+/* 拖拽时禁用过渡动画，避免卡顿 */
+.side-pane.dragging {
+  transition: none;
 }
 
 .left-pane  { border-right: 1px solid var(--aitext-split-border, #e4e4e4); }
@@ -322,6 +365,8 @@ watch(
   flex: 1;
   min-width: 0;
   overflow: hidden;
+  /* 避免面板宽度变化时重排 */
+  contain: layout;
 }
 
 /* ━━━ 分割线 ━━━ */
