@@ -8,7 +8,7 @@
         <!-- 左侧面板 -->
         <div
           class="side-pane left-pane"
-          :style="{ width: leftCollapsed ? '0px' : leftWidth + 'px' }"
+          :style="{ width: leftCollapsed ? '0' : leftWidth + 'px' }"
         >
           <ChapterList
             ref="chapterListRef"
@@ -67,7 +67,7 @@
         <!-- 右侧面板 -->
         <div
           class="side-pane right-pane"
-          :style="{ width: rightCollapsed ? '0px' : rightWidth + 'px' }"
+          :style="{ width: rightCollapsed ? '0' : rightWidth + 'px' }"
         >
           <SettingsPanel
             :slug="slug"
@@ -125,14 +125,24 @@ const slug = route.params.slug as string
 const chapterListRef = ref<ComponentPublicInstance<{ refreshStoryTree: () => void }> | null>(null)
 const workAreaRef = ref<ComponentPublicInstance<{ ensureAssistedMode: () => void }> | null>(null)
 
-// ━━━ 侧栏宽度 & 折叠 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const LEFT_MIN = 238
-const LEFT_MAX = 600
-const RIGHT_MIN = 260
-const RIGHT_MAX = 520
+// ━━━ 侧栏宽度 & 折叠（基于 1920px 视口的相对比例）━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 左侧面板：最小 12.4% (238px/1920)，最大 31.3% (600px/1920)，默认 20.2% (388px/1920)
+const LEFT_MIN_PCT = 12.4
+const LEFT_MAX_PCT = 31.3
+const LEFT_DEFAULT_PCT = 20.2
 
-const leftWidth = ref(388)
-const rightWidth = ref(512)
+// 右侧面板：最小 13.5% (260px/1920)，最大 27.1% (520px/1920)，默认 26.7% (512px/1920)
+const RIGHT_MIN_PCT = 13.5
+const RIGHT_MAX_PCT = 27.1
+const RIGHT_DEFAULT_PCT = 26.7
+
+// 根据当前视口宽度计算像素值
+function vwToPx(vw: number): number {
+  return Math.round((vw / 100) * window.innerWidth)
+}
+
+const leftWidth = ref(vwToPx(LEFT_DEFAULT_PCT))
+const rightWidth = ref(vwToPx(RIGHT_DEFAULT_PCT))
 const leftCollapsed = ref(false)
 const rightCollapsed = ref(false)
 
@@ -145,6 +155,8 @@ function startDragLeft(e: MouseEvent) {
   dragging = 'left'
   dragStartX = e.clientX
   dragStartWidth = leftWidth.value
+  // 缓存边界值
+  updateCacheBoundaries()
   // 拖拽时禁止文本选中
   document.body.style.userSelect = 'none'
   // 添加拖拽类禁用过渡动画
@@ -157,6 +169,8 @@ function startDragRight(e: MouseEvent) {
   dragging = 'right'
   dragStartX = e.clientX
   dragStartWidth = rightWidth.value
+  // 缓存边界值
+  updateCacheBoundaries()
   // 拖拽时禁止文本选中
   document.body.style.userSelect = 'none'
   // 添加拖拽类禁用过渡动画
@@ -169,6 +183,17 @@ function startDragRight(e: MouseEvent) {
 let rafId: number | null = null
 let pendingWidth: number | null = null
 let pendingSide: 'left' | 'right' | null = null
+
+// 缓存边界值，避免拖拽时重复计算
+let cachedLeftMin = 0, cachedLeftMax = 0
+let cachedRightMin = 0, cachedRightMax = 0
+
+function updateCacheBoundaries() {
+  cachedLeftMin = vwToPx(LEFT_MIN_PCT)
+  cachedLeftMax = vwToPx(LEFT_MAX_PCT)
+  cachedRightMin = vwToPx(RIGHT_MIN_PCT)
+  cachedRightMax = vwToPx(RIGHT_MAX_PCT)
+}
 
 function updateWidth() {
   if (pendingWidth === null || pendingSide === null) return
@@ -189,11 +214,11 @@ function onDrag(e: MouseEvent) {
   e.preventDefault()
   if (dragging === 'left') {
     const delta = e.clientX - dragStartX
-    pendingWidth = Math.min(LEFT_MAX, Math.max(LEFT_MIN, dragStartWidth + delta))
+    pendingWidth = Math.min(cachedLeftMax, Math.max(cachedLeftMin, dragStartWidth + delta))
     pendingSide = 'left'
   } else if (dragging === 'right') {
     const delta = dragStartX - e.clientX   // 右侧：向左拖变大
-    pendingWidth = Math.min(RIGHT_MAX, Math.max(RIGHT_MIN, dragStartWidth + delta))
+    pendingWidth = Math.min(cachedRightMax, Math.max(cachedRightMin, dragStartWidth + delta))
     pendingSide = 'right'
   }
   if (rafId === null) {
@@ -220,8 +245,6 @@ function stopDrag() {
   document.removeEventListener('mousemove', onDrag)
   document.removeEventListener('mouseup', stopDrag)
 }
-
-onUnmounted(stopDrag)
 
 // ━━━ Workbench 逻辑 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function onSidebarChapterSelect(chapterId: number, title = '') {
@@ -291,6 +314,24 @@ async function syncChapterFromRoute() {
   }
 }
 
+// 窗口大小变化时重新计算面板宽度（保持比例）
+let resizeRafId: number | null = null
+function handleResize() {
+  if (resizeRafId !== null) return
+  resizeRafId = requestAnimationFrame(() => {
+    resizeRafId = null
+    if (!leftCollapsed.value) {
+      const currentPct = (leftWidth.value / window.innerWidth) * 100
+      // 保持在有效范围内
+      leftWidth.value = vwToPx(Math.min(LEFT_MAX_PCT, Math.max(LEFT_MIN_PCT, currentPct)))
+    }
+    if (!rightCollapsed.value) {
+      const currentPct = (rightWidth.value / window.innerWidth) * 100
+      rightWidth.value = vwToPx(Math.min(RIGHT_MAX_PCT, Math.max(RIGHT_MIN_PCT, currentPct)))
+    }
+  })
+}
+
 onMounted(async () => {
   try {
     await loadDesk()
@@ -300,6 +341,17 @@ onMounted(async () => {
     bookTitle.value = slug
   } finally {
     pageLoading.value = false
+  }
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  stopDrag()
+  window.removeEventListener('resize', handleResize)
+  // 取消未执行的 resize RAF
+  if (resizeRafId !== null) {
+    cancelAnimationFrame(resizeRafId)
+    resizeRafId = null
   }
 })
 
@@ -357,8 +409,10 @@ watch(
 .right-pane { border-left:  1px solid var(--aitext-split-border, #e4e4e4); }
 
 /* 折叠时去掉边框避免 1px 残留 */
-.left-pane[style*="width: 0"]  { border-right: none; }
-.right-pane[style*="width: 0"] { border-left: none; }
+.left-pane[style*="width: 0"],
+.left-pane[style*="width:0"]  { border-right: none; }
+.right-pane[style*="width: 0"],
+.right-pane[style*="width:0"] { border-left: none; }
 
 /* ━━━ 中间区 ━━━ */
 .main-pane {

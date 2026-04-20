@@ -90,6 +90,9 @@ function handleBreakerReset() {
   min-height: auto;
   display: flex;
   flex-direction: column;
+  /* 确保宽度变化时能正确传递 */
+  min-width: 0;
+  overflow: hidden;
 }
 
 .grid-cell > * {

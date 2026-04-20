@@ -80,7 +80,7 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 
 let chartInstance: ECharts | null = null
-let resizeObserver: ResizeObserver | null = null
+let containerResizeObserver: ResizeObserver | null = null
 
 // 张力警戒线
 const tensionThreshold = computed(() => props.threshold ?? 5.0)
@@ -154,12 +154,20 @@ function renderChart() {
   // 如果实例已被销毁或不存在，重新初始化
   if (!chartInstance || chartInstance.isDisposed()) {
     chartInstance = init(chartRef.value)
-    // 在 chartRef 确保存在后才初始化 ResizeObserver（解决 onMounted 时 chartRef 为 null 的问题）
-    if (!resizeObserver && chartRef.value) {
-      resizeObserver = new ResizeObserver(() => {
-        chartInstance?.resize()
+    // 图表初始化后执行一次 resize 确保尺寸正确
+    chartInstance.resize()
+    
+    // 初始化 ResizeObserver 监听容器尺寸变化（只在首次初始化时）
+    if (!containerResizeObserver) {
+      containerResizeObserver = new ResizeObserver((entries) => {
+        // 使用 requestAnimationFrame 避免频繁重绘
+        requestAnimationFrame(() => {
+          if (chartInstance && !chartInstance.isDisposed()) {
+            chartInstance.resize()
+          }
+        })
       })
-      resizeObserver.observe(chartRef.value)
+      containerResizeObserver.observe(chartRef.value)
     }
   }
 
@@ -302,10 +310,6 @@ function getTensionLabel(t: number): string {
   return '🌊 平缓'
 }
 
-function handleResize() {
-  chartInstance?.resize()
-}
-
 // 刷新图表：重新加载数据并渲染
 async function refreshChart() {
   // 先清空数据触发重新加载
@@ -327,15 +331,13 @@ watch(() => props.novelId, () => void loadTensionData())
 // ==================== 生命周期 ====================
 onMounted(() => {
   void loadTensionData()
-  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
   // 清理 ResizeObserver
-  if (resizeObserver) {
-    resizeObserver.disconnect()
-    resizeObserver = null
+  if (containerResizeObserver) {
+    containerResizeObserver.disconnect()
+    containerResizeObserver = null
   }
   // 显式 dispose 旧实例（Vue+ECharts 组件刷新必需）
   chartInstance?.dispose()
@@ -349,6 +351,8 @@ onUnmounted(() => {
   height: 200px;
   min-height: 200px;
   position: relative;
+  /* 确保容器能正确收缩 */
+  min-width: 0;
 }
 
 .chart-loading {
@@ -384,10 +388,14 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* 确保宽度能正确收缩 */
+  min-width: 0;
 }
 
 :deep(.n-card__content) {
   flex: 1;
   min-height: 0;
+  /* 确保内容区宽度能正确收缩 */
+  min-width: 0;
 }
 </style>
